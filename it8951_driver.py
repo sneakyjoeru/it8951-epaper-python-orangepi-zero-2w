@@ -384,15 +384,18 @@ class IT8951:
         self._display_area(x, y, w, h, mode)
         self._wait_display_ready()
 
-    def display_image(self, pil_image, mode=GC16_MODE, dither=False):
+    def display_image(self, pil_image, mode=GC16_MODE, dither=True):
         """Display a PIL Image on the screen, auto-scaling to fit while
         preserving aspect ratio. Image is centered on a white background.
-        Uses 8bpp (256 gray levels) for smooth anti-aliasing — no banding.
+        Uses 8bpp with Floyd-Steinberg dithering to prevent banding from
+        the IT8951's internal 256→16 gray level mapping in GC16 mode.
 
         pil_image: PIL.Image (any mode, any size).
-        dither: ignored (kept for API compatibility; 8bpp has enough levels).
+        dither: if True (default), Floyd-Steinberg dithering to prevent banding.
+                if False, send raw 8bpp (smooth but may band on gradients).
         """
         from PIL import Image
+        import numpy as np
 
         # Convert to grayscale ('L' mode: 0=black, 255=white)
         if pil_image.mode != "L":
@@ -415,9 +418,29 @@ class IT8951:
         offset_y = (screen_h - new_h) // 2
         canvas.paste(pil_image, (offset_x, offset_y))
 
-        # Send as 8bpp — 256 gray levels, no quantization, no banding.
-        # PIL L: 0=black, 255=white (sent directly, display_8bpp handles inversion).
-        self.display_8bpp(list(canvas.tobytes()), 0, 0, screen_w, screen_h, mode)
+        if dither:
+            # Floyd-Steinberg dithering to 16 levels (IT8951's actual gray depth).
+            # Quantize to multiples of 17 (0,17,34,...,255) so the IT8951's
+            # internal 256→16 mapping is exact — no extra banding.
+            arr = np.array(canvas, dtype=np.float64)
+            out = np.zeros_like(arr, dtype=np.uint8)
+            h, w = arr.shape
+            for row in range(h):
+                cur = arr[row]
+                q = np.round(cur / 17) * 17
+                q = np.clip(q, 0, 255).astype(np.uint8)
+                out[row] = q
+                err = cur - q.astype(np.float64)
+                if w > 1:
+                    arr[row, 1:] += err[:-1] * 7 / 16
+                if row + 1 < h:
+                    arr[row + 1, :-1] += err[1:] * 3 / 16
+                    arr[row + 1, :]   += err * 5 / 16
+                    arr[row + 1, 1:]  += err[:-1] * 1 / 16
+            self.display_8bpp(list(out.tobytes()), 0, 0, screen_w, screen_h, mode)
+        else:
+            # Raw 8bpp, no dithering
+            self.display_8bpp(list(canvas.tobytes()), 0, 0, screen_w, screen_h, mode)
 
     def display_text(self, text, font_size=48, font_path=None,
                      bg_color=255, fg_color=0, mode=GC16_MODE):
@@ -488,7 +511,8 @@ class IT8951:
         # Downscale to screen resolution with LANCZOS for smooth anti-aliasing
         canvas = canvas.resize((screen_w, screen_h), Image.LANCZOS)
 
-        self.display_image(canvas, mode)
+        # Text: no dithering — keep smooth anti-aliased edges clean
+        self.display_image(canvas, mode, dither=False)
 
     def sleep(self):
         self._write_cmd(IT8951_TCON_SLEEP)

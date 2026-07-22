@@ -94,11 +94,14 @@ def main():
             for row in range(h):
                 t = row / max(h - 1, 1)
                 arr[row, :] = 255 - t * 255  # 255=white at top, 0=black at bottom
-            # Floyd-Steinberg dithering to break up banding
+            # Floyd-Steinberg dithering to 16 levels (the IT8951's actual gray depth)
+            # Map 0-255 to 16 steps: quantize to multiples of 17 (0,17,34,...,255)
             out = np.zeros((h, w), dtype=np.uint8)
             for row in range(h):
                 cur = arr[row]
-                q = np.clip(np.round(cur), 0, 255).astype(np.uint8)
+                # Quantize to 16 levels: round to nearest multiple of 17
+                q = np.round(cur / 17) * 17
+                q = np.clip(q, 0, 255).astype(np.uint8)
                 out[row] = q
                 err = cur - q.astype(np.float64)
                 if w > 1:
