@@ -396,17 +396,16 @@ class IT8951:
         # Then use numpy for vectorized 4bpp packing (no Python pixel loop).
         # We create a custom 16-level grayscale palette so quantize indices
         # directly map to our 4bpp gray values (0=white → 15=black).
-        # Palette: index i → L = 255 - i*17 (i=0 → 255=white, i=15 → 0=black)
-        pal = list(range(256)) * 3  # identity palette, we'll override
-        # Build 16-entry grayscale palette: 0=white(255), 15=black(0)
-        gray_palette = []
-        for i in range(256):
-            gray_palette.append(i)
-        # Use a simpler approach: dither directly to 16 uniform levels
-        # Map: L → 4bpp gray = 15 - round(L / 17), with FS dithering
-        # Pillow quantize with dithering does this if we give it the right palette
+        # Palette index i → L = 255 - i*17 (i=0 → 255=white, i=15 → 0=black)
+        # Pillow putpalette expects INTERLEAVED R,G,B per entry (768 bytes).
+        pal_entries = []
+        for i in range(16):
+            v = 255 - i * 17  # index 0=white(255), 15=black(0)
+            pal_entries.extend([v, v, v])  # R, G, B
+        pal_entries.extend([0] * (768 - len(pal_entries)))  # pad to 256 entries
+
         pal_img = Image.new("P", (1, 1))
-        pal_img.putpalette([255 - i * 17 for i in range(16)] * 3 + [0] * (768 - 48))
+        pal_img.putpalette(pal_entries)
         quantized = canvas.quantize(colors=16, palette=pal_img, dither=Image.FLOYDSTEINBERG)
 
         # quantized indices: 0=white(L255)→4bpp 0, 15=black(L0)→4bpp 15
