@@ -384,7 +384,7 @@ class IT8951:
         self._display_area(x, y, w, h, mode)
         self._wait_display_ready()
 
-    def display_image(self, pil_image, mode=GC16_MODE, dither=True, bg_color=255):
+    def display_image(self, pil_image, mode=GC16_MODE, dither=True, bg_color=255, brightness=1.0):
         """Display a PIL Image on the screen, auto-scaling to fit while
         preserving aspect ratio. Image is centered on a background.
         Uses 8bpp with Floyd-Steinberg dithering to prevent banding.
@@ -393,6 +393,7 @@ class IT8951:
         dither: if True (default), Floyd-Steinberg dithering to 16 levels.
                 if False, send raw 8bpp (smooth but may band on gradients).
         bg_color: background L value (255=white, 0=black). Default white.
+        brightness: multiplier for non-background pixels (1.0=normal, 1.3=brighter).
         """
         from PIL import Image
         import numpy as np
@@ -417,6 +418,15 @@ class IT8951:
         offset_x = (screen_w - new_w) // 2
         offset_y = (screen_h - new_h) // 2
         canvas.paste(pil_image, (offset_x, offset_y))
+
+        # Brightness adjustment: boost non-background pixels
+        if brightness != 1.0:
+            import numpy as np
+            arr = np.array(canvas, dtype=np.float64)
+            # Only boost pixels that differ from bg_color
+            mask = np.abs(arr - bg_color) > 2  # non-background pixels
+            arr[mask] = np.clip(arr[mask] * brightness, 0, 255)
+            canvas = Image.fromarray(arr.astype(np.uint8), "L")
 
         if dither:
             # Floyd-Steinberg dithering to 16 levels (IT8951's actual gray depth).

@@ -83,7 +83,7 @@ def main():
             print("Loading image: %s" % args.image)
             img = Image.open(args.image)
             print("Original size: %s" % str(img.size))
-            epd.display_image(img, bg_color=0)  # black background
+            epd.display_image(img, bg_color=0, brightness=1.4)  # black bg, boosted
             print("Displayed.")
 
         if args.gradient:
