@@ -360,13 +360,13 @@ class IT8951:
         self._display_area(x, y, w, h, mode)
         self._wait_display_ready()
 
-    def display_image(self, pil_image, mode=GC16_MODE):
+    def display_image(self, pil_image, mode=GC16_MODE, dither=False):
         """Display a PIL Image on the screen, auto-scaling to fit while
         preserving aspect ratio. Image is centered on a white background.
-        Uses Pillow's C-optimized Floyd-Steinberg dithering + numpy for
-        fast 4bpp packing.
 
         pil_image: PIL.Image (any mode, any size).
+        dither: if True, use Floyd-Steinberg dithering (good for photos).
+                if False (default), use smooth quantization (good for text/vector).
         """
         from PIL import Image
         import numpy as np
@@ -392,40 +392,40 @@ class IT8951:
         offset_y = (screen_h - new_h) // 2
         canvas.paste(pil_image, (offset_x, offset_y))
 
-        # Convert to 4bpp with Floyd-Steinberg dithering using numpy.
+        # Convert 8-bit L to 4bpp (0=white, 15=black).
         # PIL L: 0=black, 255=white. Our 4bpp: 0=white, 15=black.
-        # gray4 = 15 - (L * 15 // 255), with error diffusion for smooth edges.
-        import numpy as np
+        # gray4 = 15 - (L * 15 / 255)
+        arr = np.array(canvas, dtype=np.float64)
 
-        # Get float array for error accumulation
-        arr = np.array(canvas, dtype=np.float64)  # 0=black, 255=white
-        out = np.zeros_like(arr, dtype=np.uint8)   # 4bpp gray values
-
-        # Floyd-Steinberg dithering (row-by-row, vectorized within each row)
-        h, w = arr.shape
-        for row in range(h):
-            cur = arr[row]  # current row's working values
-            # Quantize: L → 4bpp gray (0=white, 15=black)
-            gray4 = np.clip(15 - np.round(cur * 15 / 255), 0, 15).astype(np.uint8)
-            out[row] = gray4
-            # Compute quantized L value back for error
-            quant_l = 255 - (gray4.astype(np.float64) * 255 / 15)
-            err = cur - quant_l
-            # Diffuse error right (7/16)
-            if w > 1:
-                arr[row, 1:] += err[:-1] * 7 / 16
-            # Diffuse to next row
-            if row + 1 < h:
-                arr[row + 1, :-1] += err[1:] * 3 / 16   # left-below
-                arr[row + 1, :]   += err * 5 / 16        # directly below
-                arr[row + 1, 1:]  += err[:-1] * 1 / 16   # right-below
+        if dither:
+            # Floyd-Steinberg dithering (row-by-row, vectorized within each row)
+            # Good for photos — preserves perceived detail with 16 levels.
+            out = np.zeros_like(arr, dtype=np.uint8)
+            h, w = arr.shape
+            for row in range(h):
+                cur = arr[row]
+                gray4 = np.clip(15 - np.round(cur * 15 / 255), 0, 15).astype(np.uint8)
+                out[row] = gray4
+                quant_l = 255 - (gray4.astype(np.float64) * 255 / 15)
+                err = cur - quant_l
+                if w > 1:
+                    arr[row, 1:] += err[:-1] * 7 / 16
+                if row + 1 < h:
+                    arr[row + 1, :-1] += err[1:] * 3 / 16
+                    arr[row + 1, :]   += err * 5 / 16
+                    arr[row + 1, 1:]  += err[:-1] * 1 / 16
+            gray_arr = out
+        else:
+            # Smooth quantization: no dithering, clean gray edges.
+            # Good for text/vector — anti-aliased pixels get smooth intermediate grays.
+            gray_arr = np.clip(15 - np.round(arr * 15 / 255), 0, 15).astype(np.uint8)
 
         # Pack 4bpp: even cols → high nibble, odd cols → low nibble (vectorized)
         bpr = (screen_w * 4 + 7) // 8
         if screen_w % 2 != 0:
-            out = np.hstack([out, np.zeros((screen_h, 1), dtype=np.uint8)])
-        high = out[:, 0::2] << 4
-        low  = out[:, 1::2]
+            gray_arr = np.hstack([gray_arr, np.zeros((screen_h, 1), dtype=np.uint8)])
+        high = gray_arr[:, 0::2] << 4
+        low  = gray_arr[:, 1::2]
         packed = (high | low).astype(np.uint8)
         if packed.shape[1] < bpr:
             packed = np.hstack([packed, np.zeros((screen_h, bpr - packed.shape[1]), dtype=np.uint8)])
@@ -459,11 +459,14 @@ class IT8951:
                 font_path = ""  # fall back to default bitmap font
 
         # Auto-fit: reduce font size if text doesn't fit
+        # Render at 3× resolution for better anti-aliasing, then downscale.
+        scale_factor = 3
         screen_w, screen_h = self.panel_w, self.panel_h
+        render_w, render_h = screen_w * scale_factor, screen_h * scale_factor
         lines = text.split("\n")
 
-        # Try decreasing font sizes until it fits
-        for try_size in range(font_size, 8, -2):
+        # Try decreasing font sizes until it fits at render resolution
+        for try_size in range(font_size * scale_factor, 8, -2):
             if font_path:
                 font = ImageFont.truetype(font_path, try_size)
             else:
@@ -477,24 +480,26 @@ class IT8951:
                 bbox = font.getbbox(line) if hasattr(font, "getbbox") else (0, 0, 0, 0)
                 lw = bbox[2] - bbox[0] if bbox[2] > bbox[0] else try_size * len(line) * 0.6
                 lh = bbox[3] - bbox[1] if bbox[3] > bbox[1] else try_size
-                line_heights.append(int(lh * 1.4))  # line spacing
+                line_heights.append(int(lh * 1.4))
                 max_w = max(max_w, int(lw))
                 total_h += int(lh * 1.4)
 
-            if max_w <= screen_w - 20 and total_h <= screen_h - 20:
+            if max_w <= render_w - 60 and total_h <= render_h - 60:
                 break
 
-        # Render
-        margin = 10
-        canvas = Image.new("L", (screen_w, screen_h), bg_color)
+        # Render at high resolution
+        canvas = Image.new("L", (render_w, render_h), bg_color)
         draw = ImageDraw.Draw(canvas)
-        y = (screen_h - total_h) // 2
+        y = (render_h - total_h) // 2
         for line in lines:
             bbox = font.getbbox(line) if hasattr(font, "getbbox") else (0, 0, 0, 0)
             lw = bbox[2] - bbox[0] if bbox[2] > bbox[0] else try_size * len(line) * 0.6
-            x = (screen_w - int(lw)) // 2
+            x = (render_w - int(lw)) // 2
             draw.text((x, y), line, fill=fg_color, font=font)
             y += int(line_heights[0] * 1.0) if line_heights else try_size
+
+        # Downscale to screen resolution with LANCZOS for smooth anti-aliasing
+        canvas = canvas.resize((screen_w, screen_h), Image.LANCZOS)
 
         self.display_image(canvas, mode)
 
