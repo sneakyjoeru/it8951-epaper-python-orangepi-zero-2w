@@ -90,23 +90,20 @@ def main():
             print("Displaying vertical gradient (dithered)...")
             w, h = epd.panel_w, epd.panel_h
             import numpy as np
-            # 16 stripes top to bottom: white → black
-            # Each stripe is a solid gray, but dotted with darker pixels
-            # that get denser going down, to smooth the transition
-            stripe_h = h // 16
+            # Smooth gradient: for each pixel, compute fractional gray level
+            # then use random dithering to pick integer level.
+            # This gives soft transitions with no hard stripe edges.
             gray4 = np.zeros((h, w), dtype=np.uint8)  # 0=white, 15=black
 
-            for s in range(16):
-                y0 = s * stripe_h
-                y1 = (s + 1) * stripe_h if s < 15 else h
-                # Base gray for this stripe
-                base = s  # 0=white at top, 15=black at bottom
-                # Fill with base gray
-                gray4[y0:y1, :] = base
-                # Add dots of (base+1) gray — denser as s increases
-                # Probability of darker dot = s/15
-                dots = np.random.random((y1 - y0, w)) < (s / 15.0)
-                gray4[y0:y1][dots] = min(base + 1, 15)
+            for row in range(h):
+                # Continuous gray value 0→15 top to bottom
+                cont = row / max(h - 1, 1) * 15.0
+                base = int(cont)        # integer part
+                frac = cont - base       # fractional part (0..1)
+                # Random dithering: pixel gets base+1 with probability=frac
+                noise = np.random.random(w)
+                vals = np.where(noise < frac, base + 1, base)
+                gray4[row] = np.clip(vals, 0, 15).astype(np.uint8)
 
             # Pack 4bpp
             if w % 2 != 0:
