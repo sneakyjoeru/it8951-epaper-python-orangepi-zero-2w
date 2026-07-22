@@ -90,27 +90,32 @@ def main():
             print("Displaying vertical gradient (dithered)...")
             w, h = epd.panel_w, epd.panel_h
             import numpy as np
-            arr = np.zeros((h, w), dtype=np.float64)
-            for row in range(h):
-                t = row / max(h - 1, 1)
-                arr[row, :] = 255 - t * 255  # 255=white at top, 0=black at bottom
-            # Floyd-Steinberg dithering to 16 levels (the IT8951's actual gray depth)
-            # Map 0-255 to 16 steps: quantize to multiples of 17 (0,17,34,...,255)
-            out = np.zeros((h, w), dtype=np.uint8)
-            for row in range(h):
-                cur = arr[row]
-                # Quantize to 16 levels: round to nearest multiple of 17
-                q = np.round(cur / 17) * 17
-                q = np.clip(q, 0, 255).astype(np.uint8)
-                out[row] = q
-                err = cur - q.astype(np.float64)
-                if w > 1:
-                    arr[row, 1:] += err[:-1] * 7 / 16
-                if row + 1 < h:
-                    arr[row + 1, :-1] += err[1:] * 3 / 16
-                    arr[row + 1, :]   += err * 5 / 16
-                    arr[row + 1, 1:]  += err[:-1] * 1 / 16
-            epd.display_8bpp(list(out.tobytes()), 0, 0, w, h, GC16_MODE)
+            # 16 stripes top to bottom: white → black
+            # Each stripe is a solid gray, but dotted with darker pixels
+            # that get denser going down, to smooth the transition
+            stripe_h = h // 16
+            gray4 = np.zeros((h, w), dtype=np.uint8)  # 0=white, 15=black
+
+            for s in range(16):
+                y0 = s * stripe_h
+                y1 = (s + 1) * stripe_h if s < 15 else h
+                # Base gray for this stripe
+                base = s  # 0=white at top, 15=black at bottom
+                # Fill with base gray
+                gray4[y0:y1, :] = base
+                # Add dots of (base+1) gray — denser as s increases
+                # Probability of darker dot = s/15
+                dots = np.random.random((y1 - y0, w)) < (s / 15.0)
+                gray4[y0:y1][dots] = min(base + 1, 15)
+
+            # Pack 4bpp
+            if w % 2 != 0:
+                gray4 = np.hstack([gray4, np.zeros((h, 1), dtype=np.uint8)])
+            high = gray4[:, 0::2] << 4
+            low  = gray4[:, 1::2]
+            packed = (high | low).astype(np.uint8)
+
+            epd.display_4bpp(list(packed.tobytes()), 0, 0, w, h, GC16_MODE)
             print("Done.")
 
         if args.checker is not None:
