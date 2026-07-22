@@ -89,32 +89,28 @@ def main():
         if args.gradient:
             print("Displaying vertical gradient...")
             w, h = epd.panel_w, epd.panel_h
-            bpr = (w * 4 + 7) // 8
-            img = bytearray(bpr * h)
+            img = bytearray(w * h)
             for row in range(h):
                 t = row / max(h - 1, 1)
-                gray = int(round(t * 15))  # 0=white at top, 15=black at bottom
-                pb = ((gray & 0x0F) << 4) | (gray & 0x0F)
-                off = row * bpr
-                for px in range(bpr):
-                    img[off + px] = pb
-            epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
+                val = int(round(255 - t * 255))  # 255=white at top, 0=black at bottom
+                off = row * w
+                for px in range(w):
+                    img[off + px] = val
+            epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
             print("Done.")
 
         if args.checker is not None:
             cell = args.checker
             print("Displaying checkerboard (%dpx cells)..." % cell)
             w, h = epd.panel_w, epd.panel_h
-            bpr = (w * 4 + 7) // 8
-            img = bytearray(bpr * h)
+            img = bytearray(w * h)
             for row in range(h):
                 cy = row // cell
-                off = row * bpr
-                for px in range(w // 2):
-                    cx = (px * 2) // cell
-                    val = 0xFF if (cx + cy) % 2 == 0 else 0x00
-                    img[off + px] = val
-            epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
+                off = row * w
+                for col in range(w):
+                    cx = col // cell
+                    img[off + col] = 0 if (cx + cy) % 2 == 0 else 255
+            epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
             print("Done.")
 
         if args.cross is not None:
@@ -126,14 +122,13 @@ def main():
         if args.quarter:
             print("Displaying quarter black...")
             w, h = epd.panel_w, epd.panel_h
-            bpr = (w * 4 + 7) // 8
-            img = bytearray(bpr * h)
+            img = bytearray([255] * (w * h))  # white
             hw, hh = w // 2, h // 2
             for row in range(hh):
-                off = row * bpr
-                for px in range(hw // 2):
-                    img[off + px] = 0xFF
-            epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
+                off = row * w
+                for col in range(hw):
+                    img[off + col] = 0  # black
+            epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
             print("Done.")
 
     finally:
@@ -141,20 +136,15 @@ def main():
 
 
 def _draw_cross(epd, line_width, invert, vertical):
-    """Draw gradient diagonal cross."""
+    """Draw gradient diagonal cross (8bpp, PIL convention: 0=black, 255=white)."""
     w, h = epd.panel_w, epd.panel_h
-    bpr = (w * 4 + 7) // 8
-    img = bytearray([0xFF if invert else 0x00] * (bpr * h))
+    img = bytearray([0 if invert else 255] * (w * h))  # bg: 0=black or 255=white
     cx, cy = w // 2, h // 2
 
-    def set_pixel(x, y, gray):
+    def set_pixel(x, y, val):
         if x < 0 or x >= w or y < 0 or y >= h:
             return
-        off = y * bpr + x // 2
-        if x % 2 == 0:
-            img[off] = (img[off] & 0x0F) | ((gray & 0x0F) << 4)
-        else:
-            img[off] = (img[off] & 0xF0) | (gray & 0x0F)
+        img[y * w + x] = val
 
     def draw_line(x0, y0, x1, y1, width):
         dx, dy = x1 - x0, y1 - y0
@@ -171,17 +161,18 @@ def _draw_cross(epd, line_width, invert, vertical):
                 t = cy_pt / max(h - 1, 1)
             else:
                 t = i / max(steps, 1)
-            gray = int(round((15 - t * 15) if invert else (t * 15)))
+            # PIL: 0=black, 255=white. invert: line goes black→white, else white→black
+            val = int(round(t * 255)) if invert else int(round(255 - t * 255))
             half_w = width / 2
             for j in range(-int(half_w), int(half_w) + 1):
                 set_pixel(int(round(cx_pt + px_val * j)),
-                          int(round(cy_pt + py_val * j)), gray)
+                          int(round(cy_pt + py_val * j)), val)
 
     draw_line(0, 0, cx, cy, line_width)
     draw_line(w - 1, 0, cx, cy, line_width)
     draw_line(0, h - 1, cx, cy, line_width)
     draw_line(w - 1, h - 1, cx, cy, line_width)
-    epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
+    epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
 
 
 if __name__ == "__main__":
