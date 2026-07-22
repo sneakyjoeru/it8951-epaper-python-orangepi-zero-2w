@@ -384,15 +384,15 @@ class IT8951:
         self._display_area(x, y, w, h, mode)
         self._wait_display_ready()
 
-    def display_image(self, pil_image, mode=GC16_MODE, dither=True):
+    def display_image(self, pil_image, mode=GC16_MODE, dither=True, bg_color=255):
         """Display a PIL Image on the screen, auto-scaling to fit while
-        preserving aspect ratio. Image is centered on a white background.
-        Uses 8bpp with Floyd-Steinberg dithering to prevent banding from
-        the IT8951's internal 256→16 gray level mapping in GC16 mode.
+        preserving aspect ratio. Image is centered on a background.
+        Uses 8bpp with Floyd-Steinberg dithering to prevent banding.
 
         pil_image: PIL.Image (any mode, any size).
-        dither: if True (default), Floyd-Steinberg dithering to prevent banding.
+        dither: if True (default), Floyd-Steinberg dithering to 16 levels.
                 if False, send raw 8bpp (smooth but may band on gradients).
+        bg_color: background L value (255=white, 0=black). Default white.
         """
         from PIL import Image
         import numpy as np
@@ -412,8 +412,8 @@ class IT8951:
         else:
             new_w, new_h = img_w, img_h
 
-        # Center on white background
-        canvas = Image.new("L", (screen_w, screen_h), 255)  # 255=white
+        # Center on background
+        canvas = Image.new("L", (screen_w, screen_h), bg_color)
         offset_x = (screen_w - new_w) // 2
         offset_y = (screen_h - new_h) // 2
         canvas.paste(pil_image, (offset_x, offset_y))
