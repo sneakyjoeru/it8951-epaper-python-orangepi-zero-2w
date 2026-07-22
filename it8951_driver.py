@@ -392,45 +392,45 @@ class IT8951:
         offset_y = (screen_h - new_h) // 2
         canvas.paste(pil_image, (offset_x, offset_y))
 
-        # Floyd-Steinberg dither to 16 levels using Pillow's C engine (fast).
-        # Then use numpy for vectorized 4bpp packing (no Python pixel loop).
-        # We create a custom 16-level grayscale palette so quantize indices
-        # directly map to our 4bpp gray values (0=white → 15=black).
-        # Palette index i → L = 255 - i*17 (i=0 → 255=white, i=15 → 0=black)
-        # Pillow putpalette expects INTERLEAVED R,G,B per entry (768 bytes).
-        pal_entries = []
-        for i in range(16):
-            v = 255 - i * 17  # index 0=white(255), 15=black(0)
-            pal_entries.extend([v, v, v])  # R, G, B
-        pal_entries.extend([0] * (768 - len(pal_entries)))  # pad to 256 entries
+        # Convert to 4bpp with Floyd-Steinberg dithering using numpy.
+        # PIL L: 0=black, 255=white. Our 4bpp: 0=white, 15=black.
+        # gray4 = 15 - (L * 15 // 255), with error diffusion for smooth edges.
+        import numpy as np
 
-        pal_img = Image.new("P", (1, 1))
-        pal_img.putpalette(pal_entries)
-        quantized = canvas.quantize(colors=16, palette=pal_img, dither=Image.FLOYDSTEINBERG)
+        # Get float array for error accumulation
+        arr = np.array(canvas, dtype=np.float64)  # 0=black, 255=white
+        out = np.zeros_like(arr, dtype=np.uint8)   # 4bpp gray values
 
-        # quantized indices: 0=white(L255)→4bpp 0, 15=black(L0)→4bpp 15
-        # So index == 4bpp gray directly! No remapping needed.
+        # Floyd-Steinberg dithering (row-by-row, vectorized within each row)
+        h, w = arr.shape
+        for row in range(h):
+            cur = arr[row]  # current row's working values
+            # Quantize: L → 4bpp gray (0=white, 15=black)
+            gray4 = np.clip(15 - np.round(cur * 15 / 255), 0, 15).astype(np.uint8)
+            out[row] = gray4
+            # Compute quantized L value back for error
+            quant_l = 255 - (gray4.astype(np.float64) * 255 / 15)
+            err = cur - quant_l
+            # Diffuse error right (7/16)
+            if w > 1:
+                arr[row, 1:] += err[:-1] * 7 / 16
+            # Diffuse to next row
+            if row + 1 < h:
+                arr[row + 1, :-1] += err[1:] * 3 / 16   # left-below
+                arr[row + 1, :]   += err * 5 / 16        # directly below
+                arr[row + 1, 1:]  += err[:-1] * 1 / 16   # right-below
 
-        # Vectorized 4bpp packing with numpy
-        raw = np.frombuffer(quantized.tobytes(), dtype=np.uint8)
-        raw = raw.reshape((screen_h, screen_w))
-
-        # Pack pairs of pixels: even columns → high nibble, odd → low nibble
+        # Pack 4bpp: even cols → high nibble, odd cols → low nibble (vectorized)
         bpr = (screen_w * 4 + 7) // 8
-        # Ensure even width for packing (pad if needed)
         if screen_w % 2 != 0:
-            raw = np.hstack([raw, np.zeros((screen_h, 1), dtype=np.uint8)])
-
-        high = raw[:, 0::2] << 4   # even cols → high nibble
-        low  = raw[:, 1::2]        # odd cols → low nibble
-        packed = (high | low).astype(np.uint8)  # shape: (screen_h, screen_w//2)
-
-        # Pad to bpr if needed (for odd widths where bpr > screen_w//2)
+            out = np.hstack([out, np.zeros((screen_h, 1), dtype=np.uint8)])
+        high = out[:, 0::2] << 4
+        low  = out[:, 1::2]
+        packed = (high | low).astype(np.uint8)
         if packed.shape[1] < bpr:
             packed = np.hstack([packed, np.zeros((screen_h, bpr - packed.shape[1]), dtype=np.uint8)])
 
-        img_4bpp = packed.tobytes()
-        self.display_4bpp(list(img_4bpp), 0, 0, screen_w, screen_h, mode)
+        self.display_4bpp(list(packed.tobytes()), 0, 0, screen_w, screen_h, mode)
 
     def display_text(self, text, font_size=48, font_path=None,
                      bg_color=255, fg_color=0, mode=GC16_MODE):
