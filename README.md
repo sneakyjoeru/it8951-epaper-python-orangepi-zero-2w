@@ -3,8 +3,6 @@
 Python driver and HTTP API for the **Waveshare 7.8" E-Ink HAT** (1872×1404, IT8951 controller)
 on an **Orange Pi Zero 2W** (Allwinner H616, 1.5GB RAM).
 
-![SneakyJoe Avatar on E-Ink](https://media.discordapp.net/attachments/337997702170279946/1529633966275952680/PXL_20260722_233745690.MP.jpg?ex=6a62a624&is=6a6154a4&hm=1f21369a3ffde08f96da7da189940bb5c3112ee617fe67bf23216b8fe44c492a&animated=true&width=1785&height=1344)
-
 ## Features
 
 - 📺 **Full IT8951 SPI driver** — device init, VCOM read/set, 4bpp & 8bpp display
@@ -14,6 +12,12 @@ on an **Orange Pi Zero 2W** (Allwinner H616, 1.5GB RAM).
 - 🎨 **Built-in test patterns** — gradient, checkerboard, cross, quarter fill
 - 🌫️ **Random dithering** — smooth 16-level gradients without hard banding edges
 - 🔄 **Color handling** — 8bpp for text/images (smooth), 4bpp for patterns (direct control)
+
+![SneakyJoe Avatar on E-Ink](https://media.discordapp.net/attachments/337997702170279946/1529633966275952680/PXL_20260722_233745690.MP.jpg?ex=6a62a624&is=6a6154a4&hm=1f21369a3ffde08f96da7da189940bb5c3112ee617fe67bf23216b8fe44c492a&animated=true&width=1785&height=1344)
+![Cross gradient](https://media.discordapp.net/attachments/337997702170279946/1529633967135916152/PXL_20260722_233342804.MP.jpg?ex=6a62a624&is=6a6154a4&hm=afe63f23d5c7e0f8e3c7cf0a5f4369fe5ec5f6f170590d4f3f7f15d0cfa9e138&animated=true&width=1785&height=1344)
+![Antialiased text](https://media.discordapp.net/attachments/337997702170279946/1529633968079634604/PXL_20260722_233256404.MP.jpg?ex=6a62a625&is=6a6154a5&hm=ed58adc604bb8715ffc913c27a1ff44491d0379b7cd2721ee919d5fd6782fc37&animated=true&width=1785&height=1344)
+![Vertical gradient](https://media.discordapp.net/attachments/337997702170279946/1529633968952049815/PXL_20260722_233901518.MP.jpg?ex=6a62a625&is=6a6154a5&hm=c3f2bda95e18c8ce66db2b94f89bbb61df4e52674c5ef2ae5166f24210a4a220&animated=true&width=1785&height=1344)
+
 
 ## Table of Contents
 
