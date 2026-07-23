@@ -35,6 +35,7 @@ def main():
     parser.add_argument("--checker", type=int, nargs="?", const=50, metavar="PX", help="checkerboard pattern (cell size px)")
     parser.add_argument("--checker-fast", type=int, nargs="?", const=50, metavar="PX", help="checkerboard using A2 fast refresh (~0.3s)")
     parser.add_argument("--clear-checker", type=int, nargs="?", const=50, metavar="PX", help="INIT clear then instant A2 checkerboard")
+    parser.add_argument("--clear-cross", type=int, nargs="?", const=9, metavar="PX", help="clear then cross in one process (fast)")
     parser.add_argument("--cross", type=int, nargs="?", const=9, metavar="PX", help="gradient diagonal cross (line width px)")
     parser.add_argument("--quarter", action="store_true", help="top-left quarter black")
     parser.add_argument("--server", action="store_true", help="start HTTP API server")
@@ -58,8 +59,8 @@ def main():
 
         if args.info or not any([args.clear, args.text, args.image, args.gradient,
                                   args.checker is not None, args.checker_fast is not None,
-                                  args.clear_checker is not None, args.cross is not None,
-                                  args.quarter]):
+                                  args.clear_checker is not None, args.clear_cross is not None,
+                                  args.cross is not None, args.quarter]):
             info = epd.get_info()
             vcom = epd.get_vcom()
             print("Panel:   %d x %d" % (info["panel_w"], info["panel_h"]))
@@ -174,6 +175,17 @@ def main():
             epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
             t1 = time.time()
             print("Done. Total: %.2fs (single GC16, no INIT clear)" % (t1 - t0))
+
+        if args.clear_cross is not None:
+            import time
+            lw = args.clear_cross
+            print("Clear + cross in one process (%dpx)..." % lw)
+            t0 = time.time()
+            # GC16 does its own full refresh — skip separate INIT clear
+            # The cross has white background so GC16 refresh clears ghosting
+            _draw_cross(epd, lw, args.invert, args.vertical)
+            t1 = time.time()
+            print("Done. Total: %.2fs (single GC16, no separate clear)" % (t1 - t0))
 
         if args.cross is not None:
             lw = args.cross
