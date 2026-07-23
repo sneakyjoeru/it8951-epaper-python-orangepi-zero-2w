@@ -413,8 +413,9 @@ class IT8951:
         self._write_data_bytes(data)
         self._load_img_end()
 
-        # Display with A2 mode (coordinates in bytes for 1bpp mode)
-        self._display_area(x // 8, y, w // 8, h, self.a2_mode)
+        # Display with A2 mode — PIXEL coordinates (not bytes!)
+        # 1bpp mode is enabled via UP1SR bit, display_area still uses pixels
+        self._display_area(x, y, w, h, self.a2_mode)
         self._wait_display_ready()
 
         # Disable 1bpp mode
