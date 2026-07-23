@@ -116,7 +116,7 @@ def main():
             low  = gray4[:, 1::2]
             packed = (high | low).astype(np.uint8)
 
-            epd.display_4bpp(list(packed.tobytes()), 0, 0, w, h, INIT_MODE)
+            epd.display_4bpp(list(packed.tobytes()), 0, 0, w, h, GC16_MODE)
             print("Done.")
 
         if args.checker is not None:
