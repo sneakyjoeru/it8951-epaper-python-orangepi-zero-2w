@@ -142,7 +142,7 @@ sudo cat /sys/kernel/debug/gpio | grep -E "226|228|229"
 
 ```bash
 cd /opt
-sudo git clone https://github.com/sneakyjoeru/it8951-epaper.git
+sudo git clone https://github.com/sneakyjoeru/it8951-epaper-python-orangepi-zero-2w.git it8951-epaper
 sudo chown -R $USER:$USER it8951-epaper
 cd it8951-epaper
 ```
