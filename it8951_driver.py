@@ -535,38 +535,28 @@ class IT8951:
         offset_y = (screen_h - new_h) // 2
         canvas.paste(pil_image, (offset_x, offset_y))
 
-        # Brightness adjustment: boost non-background pixels
+        # Brightness adjustment: gamma correction on non-background pixels
         if brightness != 1.0:
             import numpy as np
-            arr = np.array(canvas, dtype=np.float64)
-            # Only boost pixels that differ from bg_color
-            mask = np.abs(arr - bg_color) > 2  # non-background pixels
-            arr[mask] = np.clip(arr[mask] * brightness, 0, 255)
-            canvas = Image.fromarray(arr.astype(np.uint8), "L")
+            arr = np.array(canvas, dtype=np.float64) / 255.0
+            mask = np.abs(arr * 255 - bg_color) > 2
+            arr[mask] = np.power(arr[mask], 1.0 / brightness)
+            canvas = Image.fromarray((arr * 255).clip(0, 255).astype(np.uint8), "L")
 
-        if dither:
-            # Floyd-Steinberg dithering to 16 levels (IT8951's actual gray depth).
-            # Quantize to multiples of 17 (0,17,34,...,255) so the IT8951's
-            # internal 256→16 mapping is exact — no extra banding.
-            arr = np.array(canvas, dtype=np.float64)
-            out = np.zeros_like(arr, dtype=np.uint8)
-            h, w = arr.shape
-            for row in range(h):
-                cur = arr[row]
-                q = np.round(cur / 17) * 17
-                q = np.clip(q, 0, 255).astype(np.uint8)
-                out[row] = q
-                err = cur - q.astype(np.float64)
-                if w > 1:
-                    arr[row, 1:] += err[:-1] * 7 / 16
-                if row + 1 < h:
-                    arr[row + 1, :-1] += err[1:] * 3 / 16
-                    arr[row + 1, :]   += err * 5 / 16
-                    arr[row + 1, 1:]  += err[:-1] * 1 / 16
-            self.display_8bpp(list(out.tobytes()), 0, 0, screen_w, screen_h, mode)
-        else:
-            # Raw 8bpp, no dithering
-            self.display_8bpp(list(canvas.tobytes()), 0, 0, screen_w, screen_h, mode)
+        # Convert to 4bpp (0=white, 15=black) — half the SPI data of 8bpp
+        import numpy as np
+        arr = np.array(canvas, dtype=np.float64)
+        # PIL L: 0=black, 255=white. 4bpp: 0=white, 15=black.
+        # gray4 = 15 - (L / 17)
+        gray4 = (15 - np.round(arr / 17.0)).clip(0, 15).astype(np.uint8)
+
+        # Pack 4bpp: even cols → high nibble, odd cols → low nibble
+        if screen_w % 2 != 0:
+            gray4 = np.hstack([gray4, np.zeros((screen_h, 1), dtype=np.uint8)])
+        packed = ((gray4[:, 0::2] << 4) | gray4[:, 1::2]).astype(np.uint8)
+
+        # Use clear_then_display_4bpp (A2 clear overlapped with data load)
+        self.clear_then_display_4bpp(list(packed.tobytes()), mode)
 
     def display_text(self, text, font_size=48, font_path=None,
                      bg_color=255, fg_color=0, mode=GC16_MODE):
