@@ -400,20 +400,21 @@ class IT8951:
         # Enable 1bpp mode: set UP1SR+2 bit[2]
         val = self.read_reg(UP1SR + 2)
         self.write_reg(UP1SR + 2, val | (1 << 2))
-        # Set background=white(0xFF), foreground=black(0x00)
-        self.write_reg(BGVR, (0x00 << 8) | 0xFF)
+        # Set background=white(0xF0), foreground=black(0x00) — matches Waveshare C code
+        self.write_reg(BGVR, (0x00 << 8) | 0xF0)
 
-        # Load image as 2bpp (IT8951 uses 2bpp format for 1bpp data)
-        self._load_img_area_start(IT8951_2BPP, x, y, w, h)
-        # For 1bpp, data is sent as-is (each byte = 8 pixels, packed as 16-bit words)
+        # Load image: use 8BPP format, coordinates in BYTES (not pixels)
+        # Area_W = w/8 (byte width), Area_X = x/8
+        self._load_img_area_start(IT8951_8BPP, x // 8, y, w // 8, h)
+        # Data: each byte = 8 pixels, sent as 16-bit words
         data = bytearray(img_bytes)
         if len(data) % 2 != 0:
             data.append(0)
         self._write_data_bytes(data)
         self._load_img_end()
 
-        # Display with A2 mode (fast)
-        self._display_area(x, y, w, h, self.a2_mode)
+        # Display with A2 mode (coordinates in bytes for 1bpp mode)
+        self._display_area(x // 8, y, w // 8, h, self.a2_mode)
         self._wait_display_ready()
 
         # Disable 1bpp mode
