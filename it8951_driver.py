@@ -413,11 +413,10 @@ class IT8951:
         self._write_data_bytes(data)
         self._load_img_end()
 
-        # Display with A2 mode — run multiple times to build contrast
-        # A2 is fast but weak; 3 passes gives solid black/white
-        for _ in range(3):
-            self._display_area(x, y, w, h, self.a2_mode)
-            self._wait_display_ready()
+        # Display with INIT mode for full contrast black/white
+        # A2 is fast but weak; INIT gives solid black/white at the cost of a flash
+        self._display_area(x, y, w, h, INIT_MODE)
+        self._wait_display_ready()
 
         # Disable 1bpp mode
         val = self.read_reg(UP1SR + 2)
