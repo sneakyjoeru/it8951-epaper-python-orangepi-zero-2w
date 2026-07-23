@@ -342,48 +342,42 @@ class IT8951:
         self._wait_display_ready()
 
     def _a2_fast_clear(self):
-        """Fast ghosting clear using A2 mode — flash black/white 3 times.
-        ~1s instead of 8s for INIT. Uses 1bpp mode.
+        """Fast ghosting clear using A2 mode — single black flash.
+        Loads 1bpp all-black and triggers A2 refresh. ~1.1s.
+        Overlaps with data loading — caller loads image data while A2 refreshes.
+        Does NOT wait for A2 to finish — caller must call _wait_display_ready().
         """
         w, h = self.panel_w, self.panel_h
         bpr = w // 8
 
-        # Enable 1bpp mode
         val = self.read_reg(UP1SR + 2)
         self.write_reg(UP1SR + 2, val | (1 << 2))
-        self.write_reg(BGVR, (0x00 << 8) | 0xFF)  # front=black, back=white
+        self.write_reg(BGVR, (0x00 << 8) | 0xFF)
 
         self._set_target_mem_addr(self.mem_addr)
-
-        # Build all-black and all-white 1bpp buffers
-        black = bytearray([0xFF] * (bpr * h))  # all bits 1 = all black
-        white = bytearray([0x00] * (bpr * h))  # all bits 0 = all white
+        black = bytearray([0xFF] * (bpr * h))
         if len(black) % 2: black.append(0)
-        if len(white) % 2: white.append(0)
+        self._load_img_area_start(IT8951_8BPP, 0, 0, w // 8, h)
+        self._write_data_bytes(black)
+        self._load_img_end()
+        self._display_area(0, 0, w, h, self.a2_mode)
+        # DON'T wait — let caller load data during refresh
 
-        # Flash black/white 2 times to clear ghosting
-        for frame in [black, white]:
-            self._load_img_area_start(IT8951_8BPP, 0, 0, w // 8, h)
-            self._write_data_bytes(frame)
-            self._load_img_end()
-            self._display_area(0, 0, w, h, self.a2_mode)
-            self._wait_display_ready()
-
-        # Disable 1bpp mode
+    def _a2_disable_1bpp(self):
+        """Disable 1bpp mode (call after _a2_fast_clear + _wait_display_ready)."""
         val = self.read_reg(UP1SR + 2)
         self.write_reg(UP1SR + 2, val & ~(1 << 2))
 
     def clear_then_display_4bpp(self, img_bytes, mode=GC16_MODE):
-        """Fast clear (A2 flash) then display 4bpp image with GC16.
-        A2 clear: ~1s (3 black/white flashes). GC16 render: ~6s.
-        Total: ~7s (vs 14s with INIT clear).
+        """Fast clear + 4bpp render: A2 black flash + 4bpp load overlapped + GC16.
+        ~5.2s total (A2 clear + data load happen simultaneously).
         """
         w, h = self.panel_w, self.panel_h
 
-        # 1. Fast A2 clear
+        # 1. A2 black flash (triggers refresh, doesn't wait)
         self._a2_fast_clear()
 
-        # 2. Load 4bpp image
+        # 2. Load 4bpp data WHILE A2 refreshes (SPI is free during LUT refresh)
         bpr = (w * 4 + 7) // 8
         total = bpr * h
         inverted = bytearray(total)
@@ -392,31 +386,40 @@ class IT8951:
             hi = (b >> 4) & 0x0F
             lo = b & 0x0F
             inverted[i] = ((15 - hi) << 4) | (15 - lo)
-
         self._set_target_mem_addr(self.mem_addr)
         self._load_img_area_start(IT8951_4BPP, 0, 0, w, h)
         self._write_data_bytes(inverted)
         self._load_img_end()
 
-        # 3. GC16 render
+        # 3. Wait for A2 to finish
+        self._wait_display_ready()
+        self._a2_disable_1bpp()
+
+        # 4. GC16 render (data already loaded, ~0.5s)
         self._display_area(0, 0, w, h, mode)
         self._wait_display_ready()
 
     def clear_then_display_8bpp(self, img_bytes, mode=GC16_MODE):
-        """Fast clear (A2 flash) then display 8bpp image with GC16.
+        """Fast clear + 8bpp render: A2 black flash + 8bpp load overlapped + GC16.
         """
         w, h = self.panel_w, self.panel_h
 
-        # 1. Fast A2 clear
+        # 1. A2 black flash (doesn't wait)
         self._a2_fast_clear()
 
-        # 2. Load 8bpp image and display with GC16
+        # 2. Load 8bpp data during A2 refresh
         self._set_target_mem_addr(self.mem_addr)
         self._load_img_area_start(IT8951_8BPP, 0, 0, w, h)
         data = bytearray(img_bytes)
         if len(data) % 2: data.append(0)
         self._write_data_bytes(data)
         self._load_img_end()
+
+        # 3. Wait for A2 + disable 1bpp
+        self._wait_display_ready()
+        self._a2_disable_1bpp()
+
+        # 4. GC16 render
         self._display_area(0, 0, w, h, mode)
         self._wait_display_ready()
 
